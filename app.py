@@ -1,4 +1,8 @@
 import streamlit as st
+import os, subprocess, sys
+
+if not os.path.exists("model/churn_model.pkl"):
+    subprocess.run([sys.executable, "model/train_model.py"], check=True)
 
 st.set_page_config(
     page_title="ChurnOps AI",
