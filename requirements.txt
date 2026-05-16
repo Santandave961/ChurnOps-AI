@@ -1,9 +1,9 @@
 streamlit==1.35.0
 xgboost==2.0.3
 scikit-learn==1.4.2
-shap==0.45.0
+shap==0.44.1
 mlflow==2.10.0
 pandas==2.2.2
 numpy==1.26.4
 matplotlib==3.8.4
-protobuf ==4.25.3
+protobuf==4.25.3
