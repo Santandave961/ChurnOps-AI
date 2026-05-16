@@ -1,0 +1,22 @@
+artifact_path: file:///C:/Users/USER/Desktop/ChurnOps%20AI/mlruns/176857193479847718/models/m-7c51eafb9a0f4a07857f76415ef3d14f/artifacts
+flavors:
+  python_function:
+    data: model.xgb
+    env:
+      conda: conda.yaml
+      virtualenv: python_env.yaml
+    loader_module: mlflow.xgboost
+    python_version: 3.13.5
+  xgboost:
+    code: null
+    data: model.xgb
+    model_class: xgboost.sklearn.XGBClassifier
+    model_format: xgb
+    xgb_version: 3.0.4
+mlflow_version: 3.4.0
+model_id: m-7c51eafb9a0f4a07857f76415ef3d14f
+model_size_bytes: 465781
+model_uuid: m-7c51eafb9a0f4a07857f76415ef3d14f
+prompts: null
+run_id: 9c7630bea52d4f6e8bd5aa763a59984f
+utc_time_created: '2026-05-16 19:10:20.271341'

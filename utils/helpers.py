@@ -3,7 +3,7 @@ import pickle
 import pandas as pd
 import streamlit as st
 
-ROOT = r"C:\Users\USER\Desktop\ChurnOps AI"
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MODEL_DIR = os.path.join(ROOT, "model")
 
 @st.cache_resource

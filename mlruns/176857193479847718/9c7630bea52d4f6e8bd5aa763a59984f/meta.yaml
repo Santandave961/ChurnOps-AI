@@ -1,0 +1,14 @@
+artifact_uri: file:///C:/Users/USER/Desktop/ChurnOps%20AI/mlruns/176857193479847718/9c7630bea52d4f6e8bd5aa763a59984f/artifacts
+end_time: 1778958673331
+entry_point_name: ''
+experiment_id: '176857193479847718'
+lifecycle_stage: active
+run_id: 9c7630bea52d4f6e8bd5aa763a59984f
+run_name: XGBoost_v1
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1778958618834
+status: 3
+tags: []
+user_id: USER
