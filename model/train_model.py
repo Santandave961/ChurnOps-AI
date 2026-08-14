@@ -1,28 +1,19 @@
-"""
-ChurnOps AI — Model Training Script
-Run this once locally or on Streamlit Cloud to generate the saved model.
-Usage: python model/train_model.py
-"""
-
 import os
 import pickle
+import json
 import numpy as np
 import pandas as pd
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
 from sklearn.metrics import (
     accuracy_score, roc_auc_score, f1_score,
-    precision_score, recall_score, confusion_matrix
+    precision_score, recall_score
 )
 import xgboost as xgb
-import mlflow
-import mlflow.xgboost
 
-# ── Reproducibility ──────────────────────────────────────────────────────────
 SEED = 42
 np.random.seed(SEED)
 
-# ── Synthetic Fintech Churn Dataset ─────────────────────────────────────────
 def generate_data(n=3000):
     np.random.seed(SEED)
     data = {
@@ -35,29 +26,47 @@ def generate_data(n=3000):
         "has_savings":        np.random.randint(0, 2, n),
         "complaint_count":    np.random.randint(0, 10, n),
         "days_since_login":   np.random.randint(0, 90, n),
-        "failed_txn_rate":    np.random.uniform(0, 0.5, n),
         "support_calls":      np.random.randint(0, 15, n),
         "account_type":       np.random.choice(["Savings", "Current", "Fixed"], n),
         "region":             np.random.choice(["Lagos", "Abuja", "PH", "Kano", "Others"], n),
     }
     df = pd.DataFrame(data)
 
-    # Churn probability based on features
-    churn_prob = (
-        0.3 * (df["complaint_count"] / 10) +
-        0.25 * (df["days_since_login"] / 90) +
-        0.2 * (1 - df["tenure_months"] / 72) +
-        0.15 * df["failed_txn_rate"] +
-        0.1 * (df["support_calls"] / 15)
+    # failed_txn_rate now DERIVED from num_transactions instead of independent
+    # random noise - a customer with more transactions and more complaints is
+    # more likely to also have a higher failure rate (a real-world pattern,
+    # not an unrelated random number)
+    base_fail_rate = np.random.uniform(0, 0.15, n)
+    df["failed_txn_rate"] = np.clip(
+        base_fail_rate + (df["complaint_count"] / 10) * 0.2, 0, 1
     )
-    df["churn"] = (np.random.uniform(0, 1, n) < churn_prob).astype(int)
-    return df
 
+    # --- Stronger, sharper churn signal ---
+    # Same weighted logic as before, but scaled up before the sigmoid so the
+    # seperation between "likely churner" and "likely stayer" is much wider.
+    raw_score = (
+        1.2 * (df["complaint_count"] / 10) +
+        1.0 * (df["days_since_login"] / 90) +
+        0.9 * (1 - df["tenure_months"] / 72) +
+        1.1 * df["failed_txn_rate"] +
+        0.7 * (df["support_calls"] / 15) +
+        0.4 * (1 - df["num_transactions"] / 200) # low activity also raises churn risk
+    )
+
+    # Center and scale, then push through a sigmoid for a clean, separable
+    # probability curve instead of a flat linear probability compared
+    # against pure uniform noise
+    centered = (raw_score - raw_score.mean()) / raw_score.std()
+    churn_prob = 1 / (1 + np.exp(-2.5 * centered)) # steeper sigmoid = more seperable
+
+    # Small amount of noise only, not a full independent random threshold -
+    # keeps some realistic uncertainty without drowning the signal
+    noise = np.random.normal(0, 0.05, n)
+    df["churn"] = ((churn_prob + noise) > 0.5).astype(int)
+    return df
 
 def train():
     df = generate_data()
-
-    # Encode categoricals
     le_account = LabelEncoder()
     le_region  = LabelEncoder()
     df["account_type"] = le_account.fit_transform(df["account_type"])
@@ -71,64 +80,43 @@ def train():
         X, y, test_size=0.2, random_state=SEED, stratify=y
     )
 
-    # ── MLflow Experiment ────────────────────────────────────────────────────
-    mlflow.set_experiment("ChurnOps_AI")
+    model = xgb.XGBClassifier(
+        n_estimators=200, max_depth=5, learning_rate=0.05,
+        subsample=0.8, colsample_bytree=0.8,
+        eval_metric="logloss", random_state=SEED
+    )
+    model.fit(X_train, y_train, eval_set=[(X_test, y_test)], verbose=False)
 
-    with mlflow.start_run(run_name="XGBoost_v1"):
-        params = {
-            "n_estimators":     200,
-            "max_depth":        5,
-            "learning_rate":    0.05,
-            "subsample":        0.8,
-            "colsample_bytree": 0.8,
-            "use_label_encoder": False,
-            "eval_metric":      "logloss",
-            "random_state":     SEED,
-        }
-        mlflow.log_params(params)
+    y_pred  = model.predict(X_test)
+    y_proba = model.predict_proba(X_test)[:, 1]
 
-        model = xgb.XGBClassifier(**params)
-        model.fit(
-            X_train, y_train,
-            eval_set=[(X_test, y_test)],
-            verbose=False,
-        )
+    metrics = {
+        "accuracy":  round(accuracy_score(y_test, y_pred), 4),
+        "roc_auc":   round(roc_auc_score(y_test, y_proba), 4),
+        "f1_score":  round(f1_score(y_test, y_pred), 4),
+        "precision": round(precision_score(y_test, y_pred), 4),
+        "recall":    round(recall_score(y_test, y_pred), 4),
+    }
 
-        y_pred  = model.predict(X_test)
-        y_proba = model.predict_proba(X_test)[:, 1]
+    print("Training complete!")
+    for k, v in metrics.items():
+        print(f"  {k}: {v}")
 
-        metrics = {
-            "accuracy":  round(accuracy_score(y_test, y_pred), 4),
-            "roc_auc":   round(roc_auc_score(y_test, y_proba), 4),
-            "f1_score":  round(f1_score(y_test, y_pred), 4),
-            "precision": round(precision_score(y_test, y_pred), 4),
-            "recall":    round(recall_score(y_test, y_pred), 4),
-        }
-        mlflow.log_metrics(metrics)
-        mlflow.xgboost.log_model(model, "xgboost_churn_model")
-
-        print("✅ Training complete!")
-        for k, v in metrics.items():
-            print(f"   {k}: {v}")
-
-    # ── Save artefacts ───────────────────────────────────────────────────────
     os.makedirs("model", exist_ok=True)
+    pickle.dump(model, open("model/churn_model.pkl", "wb"))
+    pickle.dump({"account_type": le_account, "region": le_region},
+                open("model/label_encoders.pkl", "wb"))
+    pickle.dump(features, open("model/feature_names.pkl", "wb"))
 
-    with open("model/churn_model.pkl", "wb") as f:
-        pickle.dump(model, f)
-    with open("model/label_encoders.pkl", "wb") as f:
-        pickle.dump({"account_type": le_account, "region": le_region}, f)
-    with open("model/feature_names.pkl", "wb") as f:
-        pickle.dump(features, f)
+    with open("model/metrics.json", "w") as f:
+        json.dump(metrics, f)
 
-    # Save test data for performance page
     X_test_df = X_test.copy()
     X_test_df["churn"]      = y_test.values
     X_test_df["churn_prob"] = y_proba
     X_test_df.to_csv("model/test_predictions.csv", index=False)
 
-    print("✅ Model artefacts saved to model/")
-
+    print("All model files saved!")
 
 if __name__ == "__main__":
     train()
